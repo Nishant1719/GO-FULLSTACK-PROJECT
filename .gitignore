@@ -23,6 +23,8 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+go.mod
+go.sum
 
 # env file
 .env
@@ -30,3 +32,4 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+go-domain/.cursor/plans/go_backend_service_setup_875bcf44.plan.md
