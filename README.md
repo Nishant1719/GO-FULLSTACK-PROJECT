@@ -15,13 +15,13 @@
 # Decision
 - We adopt the following architecture:
 ```
-React.js → Node.js (BFF) → Go (Domain Services) → PostgreSQL
+React.js → Node.js (BFF) → Go (Business Logic) → PostgreSQL
 ```
 Each layer has strict responsibilities and communicates only with the adjacent layer.
 
 # Layer Responsibilities
 
-1. React.js (Presentation Layer)
+- ## 1. React.js (Presentation Layer)
 
 - Purpose: User Interface and User Interaction
 - Responsibilities:
@@ -34,7 +34,7 @@ Each layer has strict responsibilities and communicates only with the adjacent l
     - Must not contain business rules
     - Must not handle authentication logic
 
-2. Node.js (Backend-for-Frontend Layer)
+- ## 2. Node.js (Backend-for-Frontend Layer)
 
 - Purpose: System boundary and request orchestration
 - Responsibilities:
@@ -50,7 +50,7 @@ Each layer has strict responsibilities and communicates only with the adjacent l
     - Must not implement business rules
     - Must not access the database
 
-3. Go (Domain / Business Logic Layer)
+- ## 3. Go (Domain / Business Logic Layer)
 
 - Purpose: Core business logic and data integrity
 - Responsibilities:
@@ -66,7 +66,7 @@ Each layer has strict responsibilities and communicates only with the adjacent l
     - Must not perform JWT validation
     - Must not contain frontend-facing HTTP or UI-specific logic.
 
-4. PostgreSQL (Data Layer)
+- ## 4. PostgreSQL (Data Layer)
 
 - Purpose: Persistent data storage
 - Responsibilities:
