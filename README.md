@@ -2,7 +2,7 @@
 - Status : Nil
 - Date : 21-01-2026
 
-## Context
+# Context
 - The system requires:
     - A clean separation between UI, routing/authentication, and business logic
     - Secure, stateless authentication
@@ -12,14 +12,14 @@
     - Long-term maintainability
     - To meet these requirements, we evaluated multiple backend architecture patterns and selected a layered architecture with a Backend-for-Frontend (BFF).
 
-## Decision
+# Decision
 - We adopt the following architecture:
 ```
 React.js → Node.js (BFF) → Go (Domain Services) → PostgreSQL
 ```
 Each layer has strict responsibilities and communicates only with the adjacent layer.
 
-## Layer Responsibilities
+# Layer Responsibilities
 
 1. React.js (Presentation Layer)
 
@@ -78,9 +78,9 @@ Each layer has strict responsibilities and communicates only with the adjacent l
     - Accessed only by Go services
     - No direct access from Node.js or React.js
 
-## Authentication & Authorization Strategy
+# Authentication & Authorization Strategy
 
-- # Authentication
+- ## Authentication
 
 - Authentication is handled at the Node.js (BFF) layer
 - The BFF is responsible for:
@@ -90,18 +90,18 @@ Each layer has strict responsibilities and communicates only with the adjacent l
 - Authentication details are abstracted away from downstream services
 - The specific authentication mechanism (e.g., token-based, session-based, or external identity provider) is an implementation detail of the BFF and is not coupled to the domain layer.
 
-- # Authorization
+- ## Authorization
 - Request-level authorization (e.g., role or access checks) is enforced at the BFF layer.
 - Domain-level authorization (business rule–driven access constraints) is enforced within Go services where required.
 - Authorization decisions are based on validated identity context propagated from the BFF
 
-- # Identity Propagation
+- ## Identity Propagation
 
 - Once a request is authenticated, the BFF forwards a validated identity context to the Go services
 - Go services trust this context and do not perform authentication themselves
 - Identity context is used only for domain decisions, not for security boundary enforcement
 
-- # Rationale
+- ## Rationale
 
 - Authentication is a system boundary concern, not a domain concern
 - Keeping authentication logic in the BFF:
@@ -110,17 +110,17 @@ Each layer has strict responsibilities and communicates only with the adjacent l
 - Reduces duplication across domain services
 - Go services remain focused on business correctness and data integrity
 
-## Consequences
+# Consequences
 
-- # Positive Outcomes
+- ## Positive Outcomes
 - Clear separation of concerns
 - Reduced attack surface
 - Simplified business logic
 - Independent scaling
 - Easier testing and debugging
-- # Trade-offs
+- ## Trade-offs
 - Additional network hop (Node → Go)
 - Increased operational complexity
 - Requires strict API contracts
 
-## Final Decision Statement
+# Final Decision Statement
