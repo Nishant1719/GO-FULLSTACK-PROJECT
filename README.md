@@ -15,7 +15,7 @@
 # Decision
 - We adopt the following architecture:
 ```
-React.js → Node.js (BFF) → Go (DDD) → PostgreSQL
+React.js → Node.js (BFF) → Go (Business Logic) → PostgreSQL
 ```
 Each layer has strict responsibilities and communicates only with the adjacent layer.
 
