@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internals/middleware"
 	"github.com/gin-gonic/gin"
-	"github.com/go-domain/internals/middleware"
 )
 
 // Building HTTP Server
@@ -22,11 +22,13 @@ func (app *application) mount() http.Handler {
 	r := gin.Default()
 
 	// Apply middlewares
-	r.Use(middleware.RequestID())
-	r.Use(middleware.RealIP())
-	r.Use(middleware.Logger())
-	r.Use(middleware.CORS())
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.RequestID()) // assign unique id to each request
+	r.Use(middleware.RealIP())    // get real client ip
+	r.Use(middleware.Logger())    // log request details
+	r.Use(middleware.CORS())      // handle CORS
+	r.Use(middleware.Recoverer()) // recover from panics
+
+	r.Use(middleware.Timeout(60 * time.Second)) // set timeout for requests
 
 	// Define a simple GET endpoint
 	r.GET("/ping", func(c *gin.Context) {

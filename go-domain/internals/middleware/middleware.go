@@ -76,3 +76,18 @@ func CORS() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// Recoverer middleware recovers from panics and returns 500 status code
+func Recoverer() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				fmt.Printf("[PANIC] %v\n", err)
+				c.AbortWithStatusJSON(500, gin.H{
+					"error": "Internal Server Error",
+				})
+			}
+		}()
+		c.Next()
+	}
+}
