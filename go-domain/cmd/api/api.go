@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -9,13 +10,6 @@ import (
 )
 
 // Building HTTP Server
-// global stucture
-type application struct {
-	config config
-	// logger
-	//db driver
-
-}
 
 // mount
 func (app *application) mount() http.Handler {
@@ -42,6 +36,26 @@ func (app *application) mount() http.Handler {
 }
 
 // run -> gracefull shutdown
+func (app *application) run(h http.Handler) error {
+	srv := &http.Server{
+		Addr:         app.config.addr,
+		Handler:      h,
+		WriteTimeout: time.Second * 30,
+		ReadTimeout:  time.Second * 30,
+		IdleTimeout:  time.Second * 30,
+	}
+	log.Printf("Server has started : %s", app.config.addr)
+	return srv.ListenAndServe()
+}
+
+// global stucture
+type application struct {
+	config config
+	// logger
+	//db driver
+
+}
+
 type config struct {
 	addr string // server port
 	db   dbConfig
