@@ -8,6 +8,7 @@ import (
 	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/middleware"
 	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/users"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Building HTTP Server
@@ -29,23 +30,38 @@ func (app *application) mount() http.Handler {
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
+			"status":  "healthy",
+		})
+	})
+
+	// Database health check
+	r.GET("/health/db", func(c *gin.Context) {
+		if err := app.config.db.pool.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status": "unhealthy",
+				"error":  "database connection failed",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status": "healthy",
 		})
 	})
 
 	// API v1 routes
 	v1 := r.Group("/api/v1")
 	{
-		// Register domain routes
-		users.RegisterRoutes(v1)
+		// Register domain routes with database connection
+		users.RegisterRoutes(v1, app.config.db.pool)
 		// Future domains can be registered here:
-		// posts.RegisterRoutes(v1)
-		// products.RegisterRoutes(v1)
+		// posts.RegisterRoutes(v1, app.config.db.pool)
+		// products.RegisterRoutes(v1, app.config.db.pool)
 	}
 
 	return r
 }
 
-// run -> gracefull shutdown
+// run -> graceful shutdown
 func (app *application) run(h http.Handler) error {
 	srv := &http.Server{
 		Addr:         app.config.addr,
@@ -54,24 +70,21 @@ func (app *application) run(h http.Handler) error {
 		ReadTimeout:  time.Second * 30,
 		IdleTimeout:  time.Second * 30,
 	}
-	log.Printf("Server has started : %s", app.config.addr)
+	log.Printf("Server has started: %s", app.config.addr)
 	return srv.ListenAndServe()
 }
 
-// global stucture
+// global structure
 type application struct {
 	config config
-	// logger
-	//db driver
-
 }
 
 type config struct {
-	addr string // server port
-	db   dbConfig
-	//
+	addr string   // server port
+	db   dbConfig // database configuration
 }
 
 type dbConfig struct {
-	dsn string // conn string
+	dsn  string         // connection string
+	pool *pgxpool.Pool  // database connection pool
 }
