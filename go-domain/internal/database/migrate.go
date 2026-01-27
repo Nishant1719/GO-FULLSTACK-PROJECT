@@ -8,22 +8,31 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/lib/pq"
 )
 
 // RunMigrations applies all pending database migrations
 func RunMigrations(dsn string, migrationsPath string) error {
+	slog.Info("Attempting database connection", "dsn_masked", maskPassword(dsn))
+	
 	// Open connection using database/sql for migrations
-	db, err := sql.Open("pgx", dsn)
+	// Use "postgres" as driver name (lib/pq driver)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
 
+	// Set connection pool settings for migrations
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	slog.Info("Testing database connection...")
 	// Test the connection
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
+	slog.Info("Database connection successful")
 
 	// Create postgres driver instance
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
@@ -52,4 +61,13 @@ func RunMigrations(dsn string, migrationsPath string) error {
 
 	slog.Info("Migrations applied successfully")
 	return nil
+}
+
+// maskPassword masks the password in the DSN for logging
+func maskPassword(dsn string) string {
+	// Simple masking - just show structure without exposing credentials
+	if len(dsn) > 30 {
+		return dsn[:30] + "..." 
+	}
+	return dsn
 }

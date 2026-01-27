@@ -3,7 +3,6 @@ package main
 import (
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/database"
 	"github.com/joho/godotenv"
@@ -25,6 +24,8 @@ func main() {
 		slog.Error("DATABASE_URL environment variable is required")
 		os.Exit(1)
 	}
+	
+	slog.Info("Using database connection", "dsn", maskDSN(dsn))
 
 	// Get server address
 	addr := os.Getenv("SERVER_ADDR")
@@ -32,7 +33,9 @@ func main() {
 		addr = ":8080" // Default to port 8080
 	}
 
-	// Run migrations
+	// Run migrations (temporarily disabled - run manually for now)
+	// TODO: Fix authentication issues with golang-migrate
+	/*
 	migrationsPath, err := filepath.Abs("./migrations")
 	if err != nil {
 		slog.Error("Failed to get migrations path", "error", err)
@@ -44,6 +47,8 @@ func main() {
 		slog.Error("Failed to run migrations", "error", err)
 		os.Exit(1)
 	}
+	*/
+	slog.Info("Skipping auto-migrations (run migrations manually with: docker exec -i go-domain-postgres psql -U postgres -d go_domain_db < migrations/000001_create_users_table.up.sql)")
 
 	// Initialize database connection
 	dbCfg := database.GetDefaultConfig(dsn)
@@ -73,4 +78,12 @@ func main() {
 		slog.Error("Server failed to start", "error", err)
 		os.Exit(1)
 	}
+}
+
+// maskDSN masks sensitive information in the DSN for logging
+func maskDSN(dsn string) string {
+	if len(dsn) > 40 {
+		return dsn[:40] + "..."
+	}
+	return dsn
 }

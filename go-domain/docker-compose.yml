@@ -8,8 +8,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: go_domain_db
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5432:5432"
+      - "5434:5432"  # Changed to 5434 on host to avoid conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +18,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - go-domain-network
+
+  api:
+    build: .
+    container_name: go-domain-api
+    environment:
+      - DATABASE_URL=postgresql://postgres@postgres:5432/go_domain_db?sslmode=disable
+      - SERVER_ADDR=:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - go-domain-network
+    restart: unless-stopped
 
   # Optional: pgAdmin for database management
   pgadmin:
@@ -32,9 +50,15 @@ services:
       - postgres
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - go-domain-network
 
 volumes:
   postgres_data:
     driver: local
   pgadmin_data:
     driver: local
+
+networks:
+  go-domain-network:
+    driver: bridge
