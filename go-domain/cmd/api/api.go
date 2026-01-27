@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internals/middleware"
+	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/middleware"
+	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/users"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,13 +25,22 @@ func (app *application) mount() http.Handler {
 
 	r.Use(middleware.Timeout(60 * time.Second)) // set timeout for requests
 
-	// Define a simple GET endpoint
+	// Health check endpoint
 	r.GET("/ping", func(c *gin.Context) {
-		// Return JSON response
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 		})
 	})
+
+	// API v1 routes
+	v1 := r.Group("/api/v1")
+	{
+		// Register domain routes
+		users.RegisterRoutes(v1)
+		// Future domains can be registered here:
+		// posts.RegisterRoutes(v1)
+		// products.RegisterRoutes(v1)
+	}
 
 	return r
 }
