@@ -28,9 +28,11 @@ go.sum
 
 # env file
 .env
+.env.example
 
 # Editor/IDE
 # .idea/
 # .vscode/
 go-domain/.cursor/
 
+*node_modules

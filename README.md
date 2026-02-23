@@ -124,3 +124,75 @@ Each layer has strict responsibilities and communicates only with the adjacent l
 - Requires strict API contracts
 
 # Final Decision Statement
+
+---
+
+# Project Setup & Run
+
+## Architecture Flow
+
+```
+React (port 5173) → Node BFF (port 3000) → Go API (port 8080) → PostgreSQL (5434)
+```
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+npm run install:all
+```
+
+### 2. Start Go domain + PostgreSQL
+
+```bash
+cd go-domain && docker-compose up -d postgres api
+```
+
+Run migrations (first time only):
+
+```bash
+docker exec -i go-domain-postgres psql -U postgres -d go_domain_db < go-domain/migrations/000001_create_users_table.up.sql
+```
+
+### 3. Start BFF
+
+```bash
+cd bff-node && npm run dev
+```
+
+### 4. Start React frontend
+
+```bash
+cd frontend && npm run dev
+```
+
+Frontend runs at http://localhost:5173 and proxies `/api` and `/health` to the BFF.
+
+### 5. Early health checks
+
+```bash
+npm run health-check
+```
+
+Verifies Go API (`/ping`) and BFF (`/health`) are reachable.
+
+## Full stack with Docker
+
+```bash
+docker-compose up --build -d
+```
+
+- Frontend: http://localhost:5173
+- BFF: http://localhost:3000
+- Go API: http://localhost:8080
+- pgAdmin: http://localhost:5050
+
+## Directory Structure
+
+| Directory    | Purpose                                         |
+|-------------|--------------------------------------------------|
+| `frontend/` | React app – UI, routing, calls BFF only          |
+| `bff-node/` | Node.js BFF – auth, routing, proxies to Go       |
+| `go-domain/`| Go service – business logic, PostgreSQL          |
+| `scripts/`  | Health check and utility scripts                 |
