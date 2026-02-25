@@ -1,0 +1,11 @@
+{
+  "name": "go-fullstack-project",
+  "private": true,
+  "scripts": {
+    "dev:go": "cd go-domain && docker-compose up -d postgres && docker-compose up --build api",
+    "dev:bff": "cd bff-node && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "health-check": "node scripts/health-check.js",
+    "install:all": "npm install && cd frontend && npm install && cd ../bff-node && npm install"
+  }
+}

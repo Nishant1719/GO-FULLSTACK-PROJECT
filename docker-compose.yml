@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: go-fullstack-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: go_domain_db
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - go-fullstack-network
+
+  go-api:
+    build: ./go-domain
+    container_name: go-fullstack-go-api
+    environment:
+      - DATABASE_URL=postgresql://postgres@postgres:5432/go_domain_db?sslmode=disable
+      - SERVER_ADDR=:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - go-fullstack-network
+    restart: unless-stopped
+
+  bff-node:
+    build: ./bff-node
+    container_name: go-fullstack-bff-node
+    environment:
+      - PORT=3000
+      - GO_API_URL=http://go-api:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      go-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - go-fullstack-network
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: go-fullstack-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - bff-node
+    networks:
+      - go-fullstack-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: go-fullstack-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - go-fullstack-network
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  go-fullstack-network:
+    driver: bridge
