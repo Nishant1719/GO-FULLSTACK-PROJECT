@@ -23,8 +23,9 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
-go.mod
-go.sum
+# Only ignore go.mod/go.sum at repo root — not nested modules (e.g. go-domain/)
+/go.mod
+/go.sum
 
 # env file
 .env
