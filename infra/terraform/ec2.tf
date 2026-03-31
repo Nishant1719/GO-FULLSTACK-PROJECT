@@ -60,15 +60,24 @@ resource "aws_instance" "app" {
   vpc_security_group_ids = [aws_security_group.ec2.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
 
+  # user_data applies at launch only; when it changes, replace the instance so bootstrap stays consistent.
+  user_data_replace_on_change = true
+
   user_data = <<-EOT
     #!/bin/bash
     set -eux
+    # Start SSM before long Docker installs so the instance can register with Systems Manager (Run Command).
+    dnf install -y amazon-ssm-agent
+    systemctl enable --now amazon-ssm-agent
+
     dnf install -y docker
     systemctl enable --now docker
     usermod -aG docker ec2-user
     dnf install -y docker-compose-plugin
     mkdir -p /opt/go-fullstack
     chown ec2-user:ec2-user /opt/go-fullstack
+
+    systemctl restart amazon-ssm-agent || true
   EOT
 
   root_block_device {

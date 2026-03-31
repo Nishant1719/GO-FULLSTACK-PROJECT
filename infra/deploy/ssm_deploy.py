@@ -55,7 +55,7 @@ def wait_for_instance_running(instance_id: str, region: str, timeout_sec: int = 
     raise SystemExit(f"Timeout: EC2 {instance_id} did not reach running within {timeout_sec}s")
 
 
-def wait_for_ssm_online(instance_id: str, region: str, timeout_sec: int = 600) -> None:
+def wait_for_ssm_online(instance_id: str, region: str, timeout_sec: int = 1200) -> None:
     """SendCommand returns InvalidInstanceId until SSM lists the instance with PingStatus=Online."""
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
@@ -87,8 +87,9 @@ def wait_for_ssm_online(instance_id: str, region: str, timeout_sec: int = 600) -
         time.sleep(15)
     raise SystemExit(
         f"Timeout after {timeout_sec}s: SSM never reported Online for {instance_id}. "
-        "Check: IAM instance profile includes AmazonSSMManagedInstanceCore, VPC endpoints or "
-        "public egress for SSM, and instance is running."
+        "Check: IAM instance profile has AmazonSSMManagedInstanceCore; instance has outbound "
+        "internet (public IP or NAT) or VPC endpoints for SSM; on the instance: "
+        "`sudo systemctl status amazon-ssm-agent` and `/var/log/amazon/ssm/amazon-ssm-agent.log`."
     )
 
 
