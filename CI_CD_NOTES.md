@@ -109,9 +109,28 @@ If Terraform fails with **`403` / `Forbidden` on `HeadObject` or `S3`** during `
 
 **If resources already exist without state:** After enabling the backend, the first `terraform init` still has **empty** state. Either delete orphaned resources in the AWS console (VPC, subnets, RDS, EC2, ECR repos, etc.) and run a clean apply, or **import** existing resources into state (advanced). For a demo stack, deleting orphans once is usually simplest.
 
-### Troubleshooting: `RepositoryAlreadyExistsException` / `DBSubnetGroupAlreadyExists`
+### Troubleshooting: `RepositoryAlreadyExistsException` / `DBSubnetGroupAlreadyExists` / `DBInstanceAlreadyExists`
 
-These mean **AWS still has** an ECR repo or DB subnet group **with that name**, but **Terraform state** does not (or you have a new state file). Common after a **failed or partial apply** before remote state was working.
+These mean **AWS already has** that ECR repo, DB subnet group, or RDS instance, but **Terraform state** (in S3) does **not** track them yet. Typical after a **failed apply**: some resources were created in AWS, the run errored before state finished updating, or you fixed state/backend and re-ran while old resources remained.
+
+**Fast fix — adopt existing dev resources into state (recommended if you want to keep RDS/ECR)**
+
+1. Install [Terraform](https://developer.hashicorp.com/terraform/install) locally.
+2. Copy [`infra/terraform/backend.hcl.example`](infra/terraform/backend.hcl.example) → `backend.hcl` with your bucket, region, and DynamoDB lock table (same as GitHub variables).
+3. Use AWS credentials that can read/write that state (same role or admin locally).
+4. Run the helper script (Git Bash / WSL / Linux/macOS):
+
+```bash
+cd infra/terraform
+chmod +x import-development-existing.sh
+./import-development-existing.sh
+```
+
+That imports the three **development** ECR repos and the RDS instance **`go-fullstack-development`**. State is stored in **S3**, so the next **GitHub Actions** run will see them.
+
+5. Run **`terraform plan`**. If Terraform wants to **replace** RDS because the subnet group in AWS differs from what’s in code, either accept the plan (may cause brief downtime) or, for a throwaway demo, delete the RDS instance in the console and run **`terraform apply`** locally once to recreate it under Terraform’s subnet group.
+
+6. If **`aws_ssm_parameter.database_url`** already exists but isn’t in state, import it (the script prints the command). Then **`terraform apply`** until clean.
 
 **Option A — Delete orphans (simplest for demos)**  
 In the AWS console (same region as the stack):
@@ -123,18 +142,8 @@ In the AWS console (same region as the stack):
 
 Then re-run the GitHub Actions workflow.
 
-**Option B — Import existing ECR repos into state (keep images)**  
-From a machine with Terraform and the same **S3 backend** as CI (`backend.hcl`):
-
-```bash
-cd infra/terraform
-terraform init -backend-config=backend.hcl
-terraform import 'aws_ecr_repository.frontend' 'go-fullstack-frontend-development'
-terraform import 'aws_ecr_repository.bff' 'go-fullstack-bff-development'
-terraform import 'aws_ecr_repository.go_api' 'go-fullstack-go-api-development'
-```
-
-Use `production` in the repo names when applying `main`. Then run **`terraform apply`** so state matches AWS; commit is not needed — state lives in S3.
+**Option B — Import manually (same as the script above)**  
+See [`infra/terraform/import-development-existing.sh`](infra/terraform/import-development-existing.sh). For **production** (`main` branch), use the same pattern with `go-fullstack-frontend-production` (and `bff` / `go-api`) and RDS identifier `go-fullstack-production` — adjust names to match [`environments/prod.tfvars`](infra/terraform/environments/prod.tfvars) `environment`.
 
 The Terraform module uses **`name_prefix`** on the DB subnet group so a **new** apply can create a subnet group without colliding with an old fixed name, once the old group is removed or you import it (import ID is the subnet group **name**).
 

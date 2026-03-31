@@ -43,3 +43,4 @@ go-domain/.cursor/
 *.tfstate
 *.tfstate.*
 infra/terraform/backend.hcl
+infra/terraform/import-development-existing.sh
