@@ -99,18 +99,48 @@ jobs:
         with:
           terraform_version: "1.9.0"
 
-      - name: Terraform init and apply
+      - name: Terraform init, import existing ECR/RDS if missing from state, apply
         working-directory: infra/terraform
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
         run: |
+          set -euo pipefail
           terraform init -input=false \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="key=go-fullstack/${DEPLOY_ENV}/terraform.tfstate" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="encrypt=true" \
             -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
+
+          # If AWS already has ECR/RDS from a prior run but state was empty or new, adopt them (idempotent).
+          # Only call terraform import when the resource exists in AWS; otherwise apply creates it on first deploy.
+          VAR_ARGS=( -var-file="${TFVARS_FILE}" -var="aws_region=${AWS_REGION}" )
+          import_if_absent() {
+            local addr="$1"
+            local id="$2"
+            local exists_check="$3"
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              echo "OK: $addr already in state"
+              return 0
+            fi
+            if ! eval "$exists_check"; then
+              echo "Skip import $addr (not in AWS yet; apply will create)"
+              return 0
+            fi
+            echo "Importing $addr <- $id"
+            terraform import "${VAR_ARGS[@]}" "$addr" "$id"
+          }
+          SUFFIX="${DEPLOY_ENV}"
+          import_if_absent 'aws_ecr_repository.frontend' "go-fullstack-frontend-${SUFFIX}" \
+            "aws ecr describe-repositories --repository-names go-fullstack-frontend-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
+          import_if_absent 'aws_ecr_repository.bff' "go-fullstack-bff-${SUFFIX}" \
+            "aws ecr describe-repositories --repository-names go-fullstack-bff-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
+          import_if_absent 'aws_ecr_repository.go_api' "go-fullstack-go-api-${SUFFIX}" \
+            "aws ecr describe-repositories --repository-names go-fullstack-go-api-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
+          import_if_absent 'aws_db_instance.main' "go-fullstack-${SUFFIX}" \
+            "aws rds describe-db-instances --db-instance-identifier go-fullstack-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
+
           terraform apply -input=false -auto-approve \
             -var-file="${TFVARS_FILE}" \
             -var="aws_region=${AWS_REGION}"
