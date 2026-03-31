@@ -1,0 +1,53 @@
+# Used on EC2 with RDS (no local postgres). Images and DATABASE_URL come from .env.
+services:
+  go-api:
+    image: ${GO_API_IMAGE}
+    container_name: go-fullstack-go-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SERVER_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - go-fullstack-network
+
+  bff-node:
+    image: ${BFF_IMAGE}
+    container_name: go-fullstack-bff-node
+    environment:
+      PORT: "3000"
+      GO_API_URL: "http://go-api:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      go-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - go-fullstack-network
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    container_name: go-fullstack-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      bff-node:
+        condition: service_healthy
+    networks:
+      - go-fullstack-network
+
+networks:
+  go-fullstack-network:
+    driver: bridge

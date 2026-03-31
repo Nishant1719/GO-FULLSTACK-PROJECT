@@ -36,3 +36,8 @@ go.sum
 go-domain/.cursor/
 
 *node_modules
+
+# Terraform (local runs)
+.terraform/
+*.tfstate
+*.tfstate.*

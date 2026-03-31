@@ -196,34 +196,3 @@ docker-compose up --build -d
 | `bff-node/` | Node.js BFF – auth, routing, proxies to Go       |
 | `go-domain/`| Go service – business logic, PostgreSQL          |
 | `scripts/`  | Health check and utility scripts                 |
-
-## CI/CD pipelines (planned)
-
-This section describes the target setup before pipeline files are implemented. The project uses **two Git branches** mapped to **two environments**.
-
-### Branch and environment mapping
-
-| Branch | Environment | Purpose |
-|--------|-------------|---------|
-| `dev`  | **Development** | Integration, feature validation, shared non-production URLs and secrets |
-| `main` | **Production**  | Stable releases, production URLs and secrets |
-
-### Trigger behavior (target)
-
-- **Push or merge to `dev`** — runs the CI workflow (lint, test, build) and, on success, deploys to the **development** environment.
-- **Push or merge to `main`** — runs the same CI checks and, on success, deploys to the **production** environment.
-
-Feature work typically merges into `dev` first; promoting to `main` is the release path to production.
-
-### What each pipeline should do
-
-1. **Continuous integration (both branches)**  
-   Install dependencies, run linters and tests for `frontend/`, `bff-node/`, and `go-domain/` as applicable, and build artifacts (or images) so broken code does not reach an environment.
-
-2. **Continuous deployment**  
-   After CI passes, deploy only from the branch that triggered the run: `dev` → development; `main` → production. Environment-specific variables (API URLs, database connections, JWT secrets) are supplied per environment, not hardcoded in the repo.
-
-### Notes
-
-- Pipeline definitions (e.g. GitHub Actions, GitLab CI) are not committed yet; this README is the agreed contract for **dev** vs **main** until implementation.
-- Add the actual workflow files under `.github/workflows/` (or your provider’s equivalent) when you wire up CI/CD.
