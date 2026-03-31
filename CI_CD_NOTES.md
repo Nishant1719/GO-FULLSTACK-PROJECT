@@ -172,6 +172,7 @@ The workflow uses `permissions: id-token: write` and `aws-actions/configure-aws-
 The IAM **role** assumed via OIDC must be allowed to:
 
 - **Terraform**: VPC, EC2, RDS, ECR, SSM, IAM (for instance profile / policies as defined in Terraform).
+- **EC2 lifecycle (required for instance replace/destroy):** Terraform must be allowed to **terminate** and **create** instances. If `user_data` changes and [`user_data_replace_on_change`](infra/terraform/ec2.tf) is true, apply will **replace** the EC2 instance, which calls **`ec2:TerminateInstances`** on the old instance. A custom policy that allows creating instances but **not** terminating them will fail with `UnauthorizedOperation` on replace. Use **`AmazonEC2FullAccess`** for demos, or add at least `ec2:TerminateInstances`, `ec2:RunInstances`, and related APIs to your OIDC role.
 - **EC2 tagging**: `ec2:CreateTags`, `ec2:DeleteTags` (Terraform applies tags via the AWS provider).
 - **Terraform state**: S3 + DynamoDB as in the section above.
 - **ECR**: push images and login.
