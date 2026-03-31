@@ -60,6 +60,32 @@ For each environment (`development`, `production`), open **Settings → Environm
 
 You can set the same variables at **repository** level instead if one region and one role apply to all jobs.
 
+Also add **repository** variables (used by the Terraform job):
+
+- **`TF_STATE_BUCKET`** — S3 bucket name for Terraform state (see below).
+- **`TF_LOCK_TABLE`** — DynamoDB table name used for Terraform state locking.
+
+### Terraform remote state (S3 backend)
+
+GitHub Actions does **not** persist files between workflow runs. Without remote state, every run starts with **no** `terraform.tfstate`, so Terraform tries to **create** VPC, ECR, RDS, etc. again. Resources that already exist in AWS then fail with errors like **`RepositoryAlreadyExistsException`**.
+
+**One-time in AWS**
+
+1. Create an **S3 bucket** (globally unique name) in your target region. Turn on **versioning** if you want state history; block public access.
+2. Create a **DynamoDB** table for locks (e.g. `terraform-locks-go-fullstack`): partition key **`LockID`** (type **String**). [Terraform S3 backend](https://developer.hashicorp.com/terraform/language/settings/backends/s3) requires this key name.
+3. In GitHub: **Settings → Secrets and variables → Actions → Variables** — set **`TF_STATE_BUCKET`** and **`TF_LOCK_TABLE`** to those names.
+
+State objects are stored as:
+
+- `go-fullstack/development/terraform.tfstate`
+- `go-fullstack/production/terraform.tfstate`
+
+**IAM for the CI role:** allow the OIDC role to read/write state, for example `s3:ListBucket` on the bucket, `s3:GetObject` / `s3:PutObject` / `s3:DeleteObject` on `arn:aws:s3:::BUCKET/go-fullstack/*`, and `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on the lock table ARN. **AdministratorAccess** includes this.
+
+**If resources already exist without state:** After enabling the backend, the first `terraform init` still has **empty** state. Either delete orphaned resources in the AWS console (VPC, subnets, RDS, EC2, ECR repos, etc.) and run a clean apply, or **import** existing resources into state (advanced). For a demo stack, deleting orphans once is usually simplest.
+
+**Local runs:** copy [`infra/terraform/backend.hcl.example`](infra/terraform/backend.hcl.example) to `backend.hcl` (gitignored), set bucket/region/table, then `terraform init -backend-config=backend.hcl`.
+
 ### AWS OIDC and IAM role
 
 In AWS (one-time per account; often done by an admin):
@@ -75,6 +101,8 @@ The workflow uses `permissions: id-token: write` and `aws-actions/configure-aws-
 The IAM **role** assumed via OIDC must be allowed to:
 
 - **Terraform**: VPC, EC2, RDS, ECR, SSM, IAM (for instance profile / policies as defined in Terraform).
+- **EC2 tagging**: `ec2:CreateTags`, `ec2:DeleteTags` (Terraform applies tags via the AWS provider).
+- **Terraform state**: S3 + DynamoDB as in the section above.
 - **ECR**: push images and login.
 - **SSM**: `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` (and related read APIs for the deploy job).
 

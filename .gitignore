@@ -42,3 +42,4 @@ go-domain/.cursor/
 .terraform/
 *.tfstate
 *.tfstate.*
+infra/terraform/backend.hcl

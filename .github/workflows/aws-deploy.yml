@@ -7,7 +7,8 @@
 # GitHub setup (one-time):
 # 1. Repo → Settings → Environments → create "development" and "production"
 # 2. AWS: IAM OIDC identity provider for token.actions.githubusercontent.com + IAM role trusted by GitHub OIDC
-# 3. Per environment, add Variables: AWS_REGION, AWS_ROLE_ARN (role to assume via OIDC; see CI_CD_NOTES.md)
+# 3. S3 bucket + DynamoDB table for Terraform remote state (see CI_CD_NOTES.md); repo Variables: TF_STATE_BUCKET, TF_LOCK_TABLE
+# 4. Per environment, add Variables: AWS_REGION, AWS_ROLE_ARN (role to assume via OIDC; see CI_CD_NOTES.md)
 
 name: CI, publish artifacts, and deploy to AWS
 
@@ -100,11 +101,19 @@ jobs:
 
       - name: Terraform init and apply
         working-directory: infra/terraform
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
         run: |
-          terraform init -input=false
+          terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=go-fullstack/${DEPLOY_ENV}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
           terraform apply -input=false -auto-approve \
-            -var-file="${{ env.TFVARS_FILE }}" \
-            -var="aws_region=${{ env.AWS_REGION }}"
+            -var-file="${TFVARS_FILE}" \
+            -var="aws_region=${AWS_REGION}"
 
       - name: Terraform outputs
         id: tfout

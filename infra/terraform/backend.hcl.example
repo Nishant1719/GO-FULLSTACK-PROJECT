@@ -1,0 +1,10 @@
+# Copy to backend.hcl (gitignored) and fill in. Used with:
+#   terraform init -backend-config=backend.hcl
+#
+# Create the bucket and DynamoDB lock table once (see CI_CD_NOTES.md).
+
+bucket         = "YOUR-UNIQUE-STATE-BUCKET-NAME"
+key            = "go-fullstack/development/terraform.tfstate"
+region         = "us-east-2"
+encrypt        = true
+dynamodb_table = "YOUR-TF-LOCK-TABLE-NAME"
