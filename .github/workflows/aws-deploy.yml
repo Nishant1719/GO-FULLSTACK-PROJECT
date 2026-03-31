@@ -1,15 +1,15 @@
 # Deploy to AWS: branch → environment
-#   dev  → GitHub Environment "development" + dev AWS account/role + dev tfvars
-#   main → GitHub Environment "production"  + prod AWS account/role + prod tfvars
+#   dev  → GitHub Environment "development" + dev tfvars
+#   main → GitHub Environment "production" + prod tfvars
+#
+# Demo stack: EC2 (Docker Compose) + RDS PostgreSQL + ECR images.
 #
 # GitHub setup (one-time):
 # 1. Repo → Settings → Environments → create "development" and "production"
-# 2. Per environment, add Variables: AWS_REGION (e.g. us-east-1)
-# 3. Per environment, add Variables: AWS_ROLE_TO_ASSUME (IAM role ARN for OIDC)
-# 4. In AWS: IAM OIDC provider for GitHub + trust policy on each role limited to this repo and branch
-#    (dev role: ref:refs/heads/dev; prod role: ref:refs/heads/main)
+# 2. AWS: IAM OIDC identity provider for token.actions.githubusercontent.com + IAM role trusted by GitHub OIDC
+# 3. Per environment, add Variables: AWS_REGION, AWS_ROLE_ARN (role to assume via OIDC; see CI_CD_NOTES.md)
 
-name: CI and deploy to AWS
+name: CI, publish artifacts, and deploy to AWS
 
 on:
   push:
@@ -22,7 +22,7 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # required for AWS OIDC (configure-aws-credentials role assumption)
 
 jobs:
   ci:
@@ -64,28 +64,33 @@ jobs:
         run: |
           npm ci
 
-  deploy:
-    name: Deploy infrastructure (AWS)
+  terraform_apply:
+    name: Terraform (VPC, ECR, RDS, EC2)
     runs-on: ubuntu-latest
     needs: ci
-    # Only dev/main get infra deploys; workflow_dispatch from other branches skips this job
     if: github.ref_name == 'dev' || github.ref_name == 'main'
-    # Maps branch to GitHub Environment so secrets/vars and protection rules are per env
     environment:
       name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     env:
-      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'production' || 'development' }}
       TFVARS_FILE: ${{ github.ref_name == 'main' && 'environments/prod.tfvars' || 'environments/dev.tfvars' }}
+      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    outputs:
+      ec2_instance_id: ${{ steps.tfout.outputs.ec2_instance_id }}
+      database_url_parameter_name: ${{ steps.tfout.outputs.database_url_parameter_name }}
+      ecr_registry_url: ${{ steps.tfout.outputs.ecr_registry_url }}
+      app_url: ${{ steps.tfout.outputs.app_url }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}-terraform
           mask-aws-account-id: true
 
       - name: Setup Terraform
@@ -99,8 +104,169 @@ jobs:
           terraform init -input=false
           terraform apply -input=false -auto-approve \
             -var-file="${{ env.TFVARS_FILE }}" \
-            -var="aws_region=${{ vars.AWS_REGION }}"
+            -var="aws_region=${{ env.AWS_REGION }}"
+
+      - name: Terraform outputs
+        id: tfout
+        working-directory: infra/terraform
+        run: |
+          echo "ec2_instance_id=$(terraform output -raw ec2_instance_id)" >> "$GITHUB_OUTPUT"
+          echo "database_url_parameter_name=$(terraform output -raw database_url_parameter_name)" >> "$GITHUB_OUTPUT"
+          echo "ecr_registry_url=$(terraform output -raw ecr_registry_url)" >> "$GITHUB_OUTPUT"
+          echo "app_url=$(terraform output -raw app_url)" >> "$GITHUB_OUTPUT"
 
       - name: Summary
         run: |
-          echo "Deployed **${{ env.DEPLOY_ENV }}** from branch **${{ github.ref_name }}**" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Terraform (${{ env.DEPLOY_ENV }})"
+            echo ""
+            echo "- App URL (HTTP): **${{ steps.tfout.outputs.app_url }}**"
+            echo "- EC2 instance: \`${{ steps.tfout.outputs.ec2_instance_id }}\`"
+            echo "- DB URL parameter: \`${{ steps.tfout.outputs.database_url_parameter_name }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish_artifacts:
+    name: Build and publish Docker artifacts
+    runs-on: ubuntu-latest
+    needs: terraform_apply
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    outputs:
+      deploy_env: ${{ steps.meta.outputs.deploy_env }}
+      tfvars_file: ${{ steps.meta.outputs.tfvars_file }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      moving_tag: ${{ steps.meta.outputs.moving_tag }}
+      frontend_image: ${{ steps.images.outputs.frontend_image }}
+      bff_image: ${{ steps.images.outputs.bff_image }}
+      go_api_image: ${{ steps.images.outputs.go_api_image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}-publish
+          mask-aws-account-id: true
+
+      - name: Compute deploy metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            DEPLOY_ENV="production"
+            TFVARS_FILE="environments/prod.tfvars"
+            TAG_PREFIX="prod"
+          else
+            DEPLOY_ENV="development"
+            TFVARS_FILE="environments/dev.tfvars"
+            TAG_PREFIX="dev"
+          fi
+
+          SHORT_SHA="${GITHUB_SHA::7}"
+          IMAGE_TAG="${TAG_PREFIX}-${SHORT_SHA}"
+          MOVING_TAG="${TAG_PREFIX}-latest"
+
+          echo "deploy_env=${DEPLOY_ENV}" >> "$GITHUB_OUTPUT"
+          echo "tfvars_file=${TFVARS_FILE}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "moving_tag=${MOVING_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker images
+        id: images
+        shell: bash
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          MOVING_TAG: ${{ steps.meta.outputs.moving_tag }}
+        run: |
+          FRONTEND_IMAGE="${REGISTRY}/go-fullstack-frontend:${IMAGE_TAG}"
+          FRONTEND_MOVING_IMAGE="${REGISTRY}/go-fullstack-frontend:${MOVING_TAG}"
+          BFF_IMAGE="${REGISTRY}/go-fullstack-bff:${IMAGE_TAG}"
+          BFF_MOVING_IMAGE="${REGISTRY}/go-fullstack-bff:${MOVING_TAG}"
+          GO_API_IMAGE="${REGISTRY}/go-fullstack-go-api:${IMAGE_TAG}"
+          GO_API_MOVING_IMAGE="${REGISTRY}/go-fullstack-go-api:${MOVING_TAG}"
+
+          docker build -t "$FRONTEND_IMAGE" -t "$FRONTEND_MOVING_IMAGE" ./frontend
+          docker push "$FRONTEND_IMAGE"
+          docker push "$FRONTEND_MOVING_IMAGE"
+
+          docker build -t "$BFF_IMAGE" -t "$BFF_MOVING_IMAGE" ./bff-node
+          docker push "$BFF_IMAGE"
+          docker push "$BFF_MOVING_IMAGE"
+
+          docker build -t "$GO_API_IMAGE" -t "$GO_API_MOVING_IMAGE" ./go-domain
+          docker push "$GO_API_IMAGE"
+          docker push "$GO_API_MOVING_IMAGE"
+
+          echo "frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "bff_image=${BFF_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "go_api_image=${GO_API_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Artifact summary
+        run: |
+          {
+            echo "### Published Docker artifacts"
+            echo ""
+            echo "- Environment: **${{ steps.meta.outputs.deploy_env }}**"
+            echo "- Immutable tag: **${{ steps.meta.outputs.image_tag }}**"
+            echo "- Moving tag: **${{ steps.meta.outputs.moving_tag }}**"
+            echo "- Frontend: \`${{ steps.images.outputs.frontend_image }}\`"
+            echo "- BFF: \`${{ steps.images.outputs.bff_image }}\`"
+            echo "- Go API: \`${{ steps.images.outputs.go_api_image }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy_app:
+    name: Deploy on EC2 (SSM)
+    runs-on: ubuntu-latest
+    needs: [terraform_apply, publish_artifacts]
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    env:
+      DEPLOY_ENV: ${{ needs.publish_artifacts.outputs.deploy_env }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ needs.terraform_apply.outputs.ec2_instance_id }}
+      DATABASE_URL_PARAMETER_NAME: ${{ needs.terraform_apply.outputs.database_url_parameter_name }}
+      ECR_REGISTRY: ${{ needs.terraform_apply.outputs.ecr_registry_url }}
+      GO_API_IMAGE: ${{ needs.publish_artifacts.outputs.go_api_image }}
+      BFF_IMAGE: ${{ needs.publish_artifacts.outputs.bff_image }}
+      FRONTEND_IMAGE: ${{ needs.publish_artifacts.outputs.frontend_image }}
+      COMPOSE_FILE: infra/deploy/docker-compose.aws.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}-deploy
+          mask-aws-account-id: true
+
+      - name: Wait for SSM agent
+        run: sleep 90
+
+      - name: Deploy via SSM
+        run: python3 infra/deploy/ssm_deploy.py
+
+      - name: Summary
+        run: |
+          {
+            echo "### EC2 deployment (${{ env.DEPLOY_ENV }})"
+            echo ""
+            echo "- App URL: **${{ needs.terraform_apply.outputs.app_url }}**"
+            echo "- Images: \`${{ needs.publish_artifacts.outputs.image_tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

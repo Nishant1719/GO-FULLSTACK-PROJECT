@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/Nishant1719/GO-FULLSTACK-PROJECT/tree/main/go-domain/internal/database"
 	"github.com/joho/godotenv"
@@ -33,22 +34,25 @@ func main() {
 		addr = ":8080" // Default to port 8080
 	}
 
-	// Run migrations (temporarily disabled - run manually for now)
-	// TODO: Fix authentication issues with golang-migrate
-	/*
-	migrationsPath, err := filepath.Abs("./migrations")
-	if err != nil {
-		slog.Error("Failed to get migrations path", "error", err)
-		os.Exit(1)
+	migrationsPath := os.Getenv("MIGRATIONS_PATH")
+	if migrationsPath == "" {
+		var err error
+		migrationsPath, err = filepath.Abs("./migrations")
+		if err != nil {
+			slog.Error("Failed to resolve migrations path", "error", err)
+			os.Exit(1)
+		}
 	}
 
-	slog.Info("Running database migrations", "path", migrationsPath)
-	if err := database.RunMigrations(dsn, migrationsPath); err != nil {
-		slog.Error("Failed to run migrations", "error", err)
-		os.Exit(1)
+	if os.Getenv("SKIP_MIGRATIONS") == "true" {
+		slog.Warn("SKIP_MIGRATIONS=true: skipping database migrations")
+	} else {
+		slog.Info("Running database migrations", "path", migrationsPath)
+		if err := database.RunMigrations(dsn, migrationsPath); err != nil {
+			slog.Error("Failed to run migrations", "error", err)
+			os.Exit(1)
+		}
 	}
-	*/
-	slog.Info("Skipping auto-migrations (run migrations manually with: docker exec -i go-domain-postgres psql -U postgres -d go_domain_db < migrations/000001_create_users_table.up.sql)")
 
 	// Initialize database connection
 	dbCfg := database.GetDefaultConfig(dsn)

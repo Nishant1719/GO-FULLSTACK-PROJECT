@@ -1,7 +1,7 @@
 FROM golang:1.25-alpine
 
-# Install required packages
-RUN apk add --no-cache git
+# Install required packages (wget for Docker healthchecks in compose)
+RUN apk add --no-cache git wget
 
 # Set working directory
 WORKDIR /app
