@@ -140,6 +140,9 @@ jobs:
             "aws ecr describe-repositories --repository-names go-fullstack-go-api-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
           import_if_absent 'aws_db_instance.main' "go-fullstack-${SUFFIX}" \
             "aws rds describe-db-instances --db-instance-identifier go-fullstack-${SUFFIX} --region ${AWS_REGION} >/dev/null 2>&1"
+          DB_URL_PARAM="/go-fullstack/${DEPLOY_ENV}/database_url"
+          import_if_absent 'aws_ssm_parameter.database_url' "${DB_URL_PARAM}" \
+            "aws ssm get-parameter --name ${DB_URL_PARAM} --region ${AWS_REGION} --with-decryption >/dev/null 2>&1"
 
           terraform apply -input=false -auto-approve \
             -var-file="${TFVARS_FILE}" \
