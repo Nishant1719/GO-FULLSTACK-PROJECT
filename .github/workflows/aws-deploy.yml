@@ -300,10 +300,7 @@ jobs:
           role-session-name: github-actions-${{ github.run_id }}-deploy
           mask-aws-account-id: true
 
-      - name: Wait for SSM agent
-        run: sleep 90
-
-      - name: Deploy via SSM
+      - name: Deploy via SSM (waits until EC2 running + SSM Online)
         run: python3 infra/deploy/ssm_deploy.py
 
       - name: Summary

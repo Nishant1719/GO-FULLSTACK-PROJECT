@@ -11,6 +11,87 @@ import sys
 import time
 
 
+def _aws_json(args: list[str]) -> dict:
+    proc = subprocess.run(args, capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr or proc.stdout or "")
+        raise SystemExit(proc.returncode)
+    return json.loads(proc.stdout)
+
+
+def wait_for_instance_running(instance_id: str, region: str, timeout_sec: int = 300) -> None:
+    """Fail fast if the instance is missing/terminated; wait until state is running."""
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        data = _aws_json(
+            [
+                "aws",
+                "ec2",
+                "describe-instances",
+                "--instance-ids",
+                instance_id,
+                "--region",
+                region,
+                "--output",
+                "json",
+            ]
+        )
+        reservations = data.get("Reservations") or []
+        if not reservations or not reservations[0].get("Instances"):
+            raise SystemExit(
+                f"No EC2 instance data for {instance_id} in {region} (wrong id or region?)"
+            )
+        inst = reservations[0]["Instances"][0]
+        state = inst["State"]["Name"]
+        if state == "running":
+            print(f"EC2 {instance_id} state=running", flush=True)
+            return
+        if state in ("terminated", "shutting-down"):
+            raise SystemExit(
+                f"EC2 {instance_id} is {state}; cannot deploy. Recreate the instance (e.g. terraform apply)."
+            )
+        print(f"EC2 {instance_id} state={state} (waiting...)", flush=True)
+        time.sleep(10)
+    raise SystemExit(f"Timeout: EC2 {instance_id} did not reach running within {timeout_sec}s")
+
+
+def wait_for_ssm_online(instance_id: str, region: str, timeout_sec: int = 600) -> None:
+    """SendCommand returns InvalidInstanceId until SSM lists the instance with PingStatus=Online."""
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        data = _aws_json(
+            [
+                "aws",
+                "ssm",
+                "describe-instance-information",
+                "--filters",
+                f"Key=InstanceIds,Values={instance_id}",
+                "--region",
+                region,
+                "--output",
+                "json",
+            ]
+        )
+        items = data.get("InstanceInformationList") or []
+        if items:
+            ping = items[0].get("PingStatus", "")
+            if ping == "Online":
+                print(f"SSM PingStatus=Online for {instance_id}", flush=True)
+                return
+            print(f"SSM PingStatus={ping} for {instance_id} (waiting...)", flush=True)
+        else:
+            print(
+                f"SSM has no InstanceInformation yet for {instance_id} (agent registering...)",
+                flush=True,
+            )
+        time.sleep(15)
+    raise SystemExit(
+        f"Timeout after {timeout_sec}s: SSM never reported Online for {instance_id}. "
+        "Check: IAM instance profile includes AmazonSSMManagedInstanceCore, VPC endpoints or "
+        "public egress for SSM, and instance is running."
+    )
+
+
 def main() -> None:
     compose_path = os.environ["COMPOSE_FILE"]
     instance_id = os.environ["EC2_INSTANCE_ID"]
@@ -20,6 +101,9 @@ def main() -> None:
     go_api = os.environ["GO_API_IMAGE"]
     bff = os.environ["BFF_IMAGE"]
     fe = os.environ["FRONTEND_IMAGE"]
+
+    wait_for_instance_running(instance_id, region)
+    wait_for_ssm_online(instance_id, region)
 
     compose_b64 = base64.b64encode(open(compose_path, "rb").read()).decode("ascii")
 

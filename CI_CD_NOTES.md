@@ -175,7 +175,7 @@ The IAM **role** assumed via OIDC must be allowed to:
 - **EC2 tagging**: `ec2:CreateTags`, `ec2:DeleteTags` (Terraform applies tags via the AWS provider).
 - **Terraform state**: S3 + DynamoDB as in the section above.
 - **ECR**: push images and login.
-- **SSM**: `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` (and related read APIs for the deploy job).
+- **SSM deploy preflight**: `ec2:DescribeInstances`, `ssm:DescribeInstanceInformation`, plus `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` (see [`infra/deploy/ssm_deploy.py`](infra/deploy/ssm_deploy.py)).
 
 If **AdministratorAccess** is not allowed, stack **AWS managed policies** on the same OIDC role until `terraform apply` and deploy succeed (exact policy names may vary by org):
 
