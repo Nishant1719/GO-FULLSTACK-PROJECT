@@ -189,13 +189,15 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
           MOVING_TAG: ${{ steps.meta.outputs.moving_tag }}
+          # Must match Terraform: go-fullstack-*-{development|production}
+          ECR_ENV: ${{ steps.meta.outputs.deploy_env }}
         run: |
-          FRONTEND_IMAGE="${REGISTRY}/go-fullstack-frontend:${IMAGE_TAG}"
-          FRONTEND_MOVING_IMAGE="${REGISTRY}/go-fullstack-frontend:${MOVING_TAG}"
-          BFF_IMAGE="${REGISTRY}/go-fullstack-bff:${IMAGE_TAG}"
-          BFF_MOVING_IMAGE="${REGISTRY}/go-fullstack-bff:${MOVING_TAG}"
-          GO_API_IMAGE="${REGISTRY}/go-fullstack-go-api:${IMAGE_TAG}"
-          GO_API_MOVING_IMAGE="${REGISTRY}/go-fullstack-go-api:${MOVING_TAG}"
+          FRONTEND_IMAGE="${REGISTRY}/go-fullstack-frontend-${ECR_ENV}:${IMAGE_TAG}"
+          FRONTEND_MOVING_IMAGE="${REGISTRY}/go-fullstack-frontend-${ECR_ENV}:${MOVING_TAG}"
+          BFF_IMAGE="${REGISTRY}/go-fullstack-bff-${ECR_ENV}:${IMAGE_TAG}"
+          BFF_MOVING_IMAGE="${REGISTRY}/go-fullstack-bff-${ECR_ENV}:${MOVING_TAG}"
+          GO_API_IMAGE="${REGISTRY}/go-fullstack-go-api-${ECR_ENV}:${IMAGE_TAG}"
+          GO_API_MOVING_IMAGE="${REGISTRY}/go-fullstack-go-api-${ECR_ENV}:${MOVING_TAG}"
 
           docker build -t "$FRONTEND_IMAGE" -t "$FRONTEND_MOVING_IMAGE" ./frontend
           docker push "$FRONTEND_IMAGE"
