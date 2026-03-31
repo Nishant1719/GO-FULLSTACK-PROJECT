@@ -80,9 +80,63 @@ State objects are stored as:
 - `go-fullstack/development/terraform.tfstate`
 - `go-fullstack/production/terraform.tfstate`
 
-**IAM for the CI role:** allow the OIDC role to read/write state, for example `s3:ListBucket` on the bucket, `s3:GetObject` / `s3:PutObject` / `s3:DeleteObject` on `arn:aws:s3:::BUCKET/go-fullstack/*`, and `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on the lock table ARN. **AdministratorAccess** includes this.
+**IAM for the CI role:** allow the OIDC role to read/write state, for example `s3:ListBucket` on the bucket, `s3:GetObject` / `s3:PutObject` / `s3:DeleteObject` on `arn:aws:s3:::BUCKET/go-fullstack/*`, and `dynamodb:GetItem`, `dynamodb:PutObject`, `dynamodb:DeleteItem` on the lock table ARN. **AdministratorAccess** includes this.
+
+If Terraform fails with **`403` / `Forbidden` on `HeadObject` or `S3`** during `terraform init`, the GitHub OIDC role **cannot read or write the state bucket**. Attach a policy like the following to that role (replace `BUCKET` and `TABLE_ARN`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::BUCKET"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::BUCKET/go-fullstack/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"],
+      "Resource": "TABLE_ARN"
+    }
+  ]
+}
+```
 
 **If resources already exist without state:** After enabling the backend, the first `terraform init` still has **empty** state. Either delete orphaned resources in the AWS console (VPC, subnets, RDS, EC2, ECR repos, etc.) and run a clean apply, or **import** existing resources into state (advanced). For a demo stack, deleting orphans once is usually simplest.
+
+### Troubleshooting: `RepositoryAlreadyExistsException` / `DBSubnetGroupAlreadyExists`
+
+These mean **AWS still has** an ECR repo or DB subnet group **with that name**, but **Terraform state** does not (or you have a new state file). Common after a **failed or partial apply** before remote state was working.
+
+**Option A — Delete orphans (simplest for demos)**  
+In the AWS console (same region as the stack):
+
+1. **ECR** → delete the three repositories `go-fullstack-frontend-<env>`, `go-fullstack-bff-<env>`, `go-fullstack-go-api-<env>` if you do not need the images inside (or empty them first per AWS rules).
+2. **RDS** → if an instance uses the subnet group, resolve that first (snapshot/delete instance only if you accept data loss for a demo).
+3. **RDS** → **Subnet groups** → delete `go-fullstack-<env>` **only if** no DB instance depends on it.
+4. If you now have **duplicate VPCs** from repeated failed applies, remove unused VPCs (and dependent resources) in **VPC** → **Your VPCs** — start with the one that has no running RDS/EC2 you care about.
+
+Then re-run the GitHub Actions workflow.
+
+**Option B — Import existing ECR repos into state (keep images)**  
+From a machine with Terraform and the same **S3 backend** as CI (`backend.hcl`):
+
+```bash
+cd infra/terraform
+terraform init -backend-config=backend.hcl
+terraform import 'aws_ecr_repository.frontend' 'go-fullstack-frontend-development'
+terraform import 'aws_ecr_repository.bff' 'go-fullstack-bff-development'
+terraform import 'aws_ecr_repository.go_api' 'go-fullstack-go-api-development'
+```
+
+Use `production` in the repo names when applying `main`. Then run **`terraform apply`** so state matches AWS; commit is not needed — state lives in S3.
+
+The Terraform module uses **`name_prefix`** on the DB subnet group so a **new** apply can create a subnet group without colliding with an old fixed name, once the old group is removed or you import it (import ID is the subnet group **name**).
 
 **Local runs:** copy [`infra/terraform/backend.hcl.example`](infra/terraform/backend.hcl.example) to `backend.hcl` (gitignored), set bucket/region/table, then `terraform init -backend-config=backend.hcl`.
 
@@ -106,7 +160,18 @@ The IAM **role** assumed via OIDC must be allowed to:
 - **ECR**: push images and login.
 - **SSM**: `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` (and related read APIs for the deploy job).
 
-For a demo, **AdministratorAccess** on that role is simplest; tighten later for production.
+If **AdministratorAccess** is not allowed, stack **AWS managed policies** on the same OIDC role until `terraform apply` and deploy succeed (exact policy names may vary by org):
+
+| Purpose | AWS managed policy (typical) |
+|--------|------------------------------|
+| Network + EC2 (VPC, subnets, SG, instance, tags) | `AmazonEC2FullAccess` |
+| RDS | `AmazonRDSFullAccess` |
+| ECR (repos + push/pull) | `AmazonEC2ContainerRegistryFullAccess` |
+| SSM (Run Command deploy) | `AmazonSSMManagedInstanceCore` may be too small — often need `AmazonSSMFullAccess` for `SendCommand` from CI, or a **custom** policy with `ssm:SendCommand`, `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` |
+| IAM objects Terraform creates (EC2 role, instance profile, policies) | `IAMFullAccess` or a **custom** policy that allows only what `infra/terraform` needs (`iam:CreateRole`, `PassRole`, `CreateInstanceProfile`, `AttachRolePolicy`, etc.) |
+| Terraform state | `AmazonS3FullAccess` + `AmazonDynamoDBFullAccess` (or tighter custom ARNs) |
+
+For a demo, **AdministratorAccess** on that role is simplest when permitted; otherwise use the table above and tighten later for production.
 
 **Security:** scope the role trust policy to this repository (and optionally branch/environment); avoid broad `repo:ORG/*` unless intentional.
 
@@ -126,3 +191,5 @@ RDS URLs from Terraform use `sslmode=require`, which works with the bundled `lib
 ### Summary
 
 The pipeline authenticates to AWS with **OIDC** (GitHub assumes an IAM role via `AWS_ROLE_ARN`; no static access keys in GitHub), validates code, provisions **EC2 + RDS + ECR** with Terraform, publishes versioned images to ECR, and deploys them on the EC2 host with **Docker Compose** and **SSM**, using the RDS connection string from SSM.
+
+

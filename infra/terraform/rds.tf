@@ -29,8 +29,9 @@ resource "aws_security_group" "rds" {
 }
 
 resource "aws_db_subnet_group" "main" {
-  name       = "go-fullstack-${replace(var.environment, " ", "-")}"
-  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+  # name_prefix avoids collision with an orphan "go-fullstack-<env>" group left in the account from a failed run.
+  name_prefix = "go-fullstack-${replace(var.environment, " ", "-")}-"
+  subnet_ids  = [aws_subnet.private_a.id, aws_subnet.private_b.id]
 }
 
 resource "aws_db_instance" "main" {
