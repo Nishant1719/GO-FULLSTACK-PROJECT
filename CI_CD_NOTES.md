@@ -113,7 +113,15 @@ If Terraform fails with **`403` / `Forbidden` on `HeadObject` or `S3`** during `
 
 These mean **AWS already has** that ECR repo, DB subnet group, or RDS instance, but **Terraform state** (in S3) does **not** track them yet. Typical after a **failed apply**: some resources were created in AWS, the run errored before state finished updating, or you fixed state/backend and re-ran while old resources remained.
 
-**Fast fix — adopt existing dev resources into state (recommended if you want to keep RDS/ECR)**
+**Fast fix — import from GitHub Actions (no local AWS CLI required)**
+
+1. Push the workflow [`.github/workflows/terraform-import-orphans.yml`](.github/workflows/terraform-import-orphans.yml).
+2. In the repo: **Actions** → **Terraform import orphans** → **Run workflow** → choose **development** or **production** → **Run workflow**.
+3. Wait for green, then run the normal **CI, publish artifacts, and deploy to AWS** workflow (or push to `dev` / `main`).
+
+This uses the same OIDC role and S3 state as CI and runs `terraform import` for the three ECR repos and the RDS instance when they are **not** already in state.
+
+**Alternative — adopt resources locally**
 
 1. Install [Terraform](https://developer.hashicorp.com/terraform/install) locally.
 2. Copy [`infra/terraform/backend.hcl.example`](infra/terraform/backend.hcl.example) → `backend.hcl` with your bucket, region, and DynamoDB lock table (same as GitHub variables).

@@ -1,0 +1,89 @@
+# One-time (or repeat-safe): import ECR repos + RDS that exist in AWS but are missing from S3 state.
+# Fixes: RepositoryAlreadyExistsException / DBInstanceAlreadyExists on terraform apply.
+#
+# How: Actions → this workflow → Run workflow → choose environment (development / production) → Run.
+# Then run the normal deploy workflow or push to dev/main.
+
+name: Terraform import orphans
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment (must match tfvars)
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  import:
+    name: Import ECR + RDS into state
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      DEPLOY_ENV: ${{ github.event.inputs.environment }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+      TFVARS_FILE: ${{ github.event.inputs.environment == 'production' && 'environments/prod.tfvars' || 'environments/dev.tfvars' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-${{ github.run_id }}-tf-import
+          mask-aws-account-id: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Init backend
+        working-directory: infra/terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=go-fullstack/${DEPLOY_ENV}/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}"
+
+      - name: Import existing ECR and RDS (skip if already in state)
+        working-directory: infra/terraform
+        run: |
+          set -euo pipefail
+          VAR_ARGS=( -var-file="${TFVARS_FILE}" -var="aws_region=${AWS_REGION}" )
+
+          import_if_absent() {
+            local addr="$1"
+            local id="$2"
+            if terraform state show "$addr" >/dev/null 2>&1; then
+              echo "OK: $addr already in state"
+            else
+              echo "Importing $addr <- $id"
+              terraform import "${VAR_ARGS[@]}" "$addr" "$id"
+            fi
+          }
+
+          SUFFIX="${DEPLOY_ENV}"
+          import_if_absent 'aws_ecr_repository.frontend' "go-fullstack-frontend-${SUFFIX}"
+          import_if_absent 'aws_ecr_repository.bff' "go-fullstack-bff-${SUFFIX}"
+          import_if_absent 'aws_ecr_repository.go_api' "go-fullstack-go-api-${SUFFIX}"
+          import_if_absent 'aws_db_instance.main' "go-fullstack-${SUFFIX}"
+
+      - name: Plan (verify)
+        working-directory: infra/terraform
+        run: |
+          terraform plan -input=false -var-file="${TFVARS_FILE}" -var="aws_region=${AWS_REGION}"
