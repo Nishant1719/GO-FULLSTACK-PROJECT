@@ -1,0 +1,106 @@
+# Deploy to AWS: branch → environment
+#   dev  → GitHub Environment "development" + dev AWS account/role + dev tfvars
+#   main → GitHub Environment "production"  + prod AWS account/role + prod tfvars
+#
+# GitHub setup (one-time):
+# 1. Repo → Settings → Environments → create "development" and "production"
+# 2. Per environment, add Variables: AWS_REGION (e.g. us-east-1)
+# 3. Per environment, add Variables: AWS_ROLE_TO_ASSUME (IAM role ARN for OIDC)
+# 4. In AWS: IAM OIDC provider for GitHub + trust policy on each role limited to this repo and branch
+#    (dev role: ref:refs/heads/dev; prod role: ref:refs/heads/main)
+
+name: CI and deploy to AWS
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go-domain/go.mod
+          cache-dependency-path: go-domain/go.sum
+
+      - name: Go test and vet
+        working-directory: go-domain
+        run: |
+          go mod download
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install, lint, build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+
+      - name: BFF install (sanity)
+        working-directory: bff-node
+        run: |
+          npm ci
+
+  deploy:
+    name: Deploy infrastructure (AWS)
+    runs-on: ubuntu-latest
+    needs: ci
+    # Only dev/main get infra deploys; workflow_dispatch from other branches skips this job
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    # Maps branch to GitHub Environment so secrets/vars and protection rules are per env
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    env:
+      DEPLOY_ENV: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+      TFVARS_FILE: ${{ github.ref_name == 'main' && 'environments/prod.tfvars' || 'environments/dev.tfvars' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform init and apply
+        working-directory: infra/terraform
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve \
+            -var-file="${{ env.TFVARS_FILE }}" \
+            -var="aws_region=${{ vars.AWS_REGION }}"
+
+      - name: Summary
+        run: |
+          echo "Deployed **${{ env.DEPLOY_ENV }}** from branch **${{ github.ref_name }}**" >> "$GITHUB_STEP_SUMMARY"
