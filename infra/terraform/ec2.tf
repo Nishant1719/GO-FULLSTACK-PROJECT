@@ -78,7 +78,7 @@ resource "aws_instance" "app" {
       mkdir -p /usr/local/lib/docker/cli-plugins
       ARCH=$(uname -m)
       case "$ARCH" in x86_64) DC_ARCH=x86_64 ;; aarch64) DC_ARCH=aarch64 ;; *) echo "unsupported arch: $ARCH"; exit 1 ;; esac
-      curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-${DC_ARCH}" \
+      curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-$${DC_ARCH}" \
         -o /usr/local/lib/docker/cli-plugins/docker-compose
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     fi
