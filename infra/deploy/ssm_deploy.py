@@ -108,9 +108,16 @@ def main() -> None:
 
     compose_b64 = base64.b64encode(open(compose_path, "rb").read()).decode("ascii")
 
+    # SSM can report Online before cloud-init finishes: /opt may be missing and Docker may not exist yet.
     commands = [
         "set -eux",
+        "mkdir -p /opt/go-fullstack",
+        "chown ec2-user:ec2-user /opt/go-fullstack",
         "cd /opt/go-fullstack",
+        # Up to ~15m: user_data may still be installing Docker when SSM is already Online.
+        "i=0; while [ $i -lt 90 ]; do command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && break; echo Waiting for Docker...; sleep 10; i=$((i+1)); done",
+        "command -v docker",
+        "docker info",
         f"export AWS_REGION={shlex.quote(region)}",
         f"export GO_API_IMAGE={shlex.quote(go_api)}",
         f"export BFF_IMAGE={shlex.quote(bff)}",
