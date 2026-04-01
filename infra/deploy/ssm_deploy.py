@@ -93,15 +93,55 @@ def wait_for_ssm_online(instance_id: str, region: str, timeout_sec: int = 1200) 
     )
 
 
+def resolve_ecr_and_images(region: str) -> tuple[str, str, str, str]:
+    """Fill missing registry / image URIs (e.g. re-run deploy-only loses upstream job outputs)."""
+    ecr_registry = os.environ.get("ECR_REGISTRY", "").strip()
+    if not ecr_registry:
+        proc = subprocess.run(
+            [
+                "aws",
+                "sts",
+                "get-caller-identity",
+                "--query",
+                "Account",
+                "--output",
+                "text",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        account = proc.stdout.strip()
+        ecr_registry = f"{account}.dkr.ecr.{region}.amazonaws.com"
+        print(f"ECR_REGISTRY was empty; using {ecr_registry}", flush=True)
+
+    go_api = os.environ.get("GO_API_IMAGE", "").strip()
+    bff = os.environ.get("BFF_IMAGE", "").strip()
+    fe = os.environ.get("FRONTEND_IMAGE", "").strip()
+    if not go_api or not bff or not fe:
+        image_tag = os.environ.get("IMAGE_TAG", "").strip()
+        deploy_env = os.environ.get("DEPLOY_ENV", "").strip()
+        if not image_tag or not deploy_env:
+            raise SystemExit(
+                "ECR image env vars are empty (common when re-running only the deploy job). "
+                "Use 'Re-run all jobs', or set GO_API_IMAGE, BFF_IMAGE, FRONTEND_IMAGE, "
+                "and ECR_REGISTRY — or set DEPLOY_ENV + IMAGE_TAG for automatic URIs."
+            )
+        go_api = f"{ecr_registry}/go-fullstack-go-api-{deploy_env}:{image_tag}"
+        bff = f"{ecr_registry}/go-fullstack-bff-{deploy_env}:{image_tag}"
+        fe = f"{ecr_registry}/go-fullstack-frontend-{deploy_env}:{image_tag}"
+        print(f"Image URIs were empty; using tag {image_tag} for env {deploy_env}", flush=True)
+
+    return ecr_registry, go_api, bff, fe
+
+
 def main() -> None:
     compose_path = os.environ["COMPOSE_FILE"]
     instance_id = os.environ["EC2_INSTANCE_ID"]
     region = os.environ["AWS_REGION"]
-    ecr_registry = os.environ["ECR_REGISTRY"]
     param_name = os.environ["DATABASE_URL_PARAMETER_NAME"]
-    go_api = os.environ["GO_API_IMAGE"]
-    bff = os.environ["BFF_IMAGE"]
-    fe = os.environ["FRONTEND_IMAGE"]
+
+    ecr_registry, go_api, bff, fe = resolve_ecr_and_images(region)
 
     wait_for_instance_running(instance_id, region)
     wait_for_ssm_online(instance_id, region)

@@ -98,6 +98,8 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.0"
+          # Default wrapper breaks `terraform output -raw` used in the next step (empty job outputs).
+          terraform_wrapper: false
 
       - name: Terraform init, import existing ECR/RDS if missing from state, apply
         working-directory: infra/terraform
@@ -280,6 +282,7 @@ jobs:
     env:
       DEPLOY_ENV: ${{ needs.publish_artifacts.outputs.deploy_env }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      IMAGE_TAG: ${{ needs.publish_artifacts.outputs.image_tag }}
       EC2_INSTANCE_ID: ${{ needs.terraform_apply.outputs.ec2_instance_id }}
       DATABASE_URL_PARAMETER_NAME: ${{ needs.terraform_apply.outputs.database_url_parameter_name }}
       ECR_REGISTRY: ${{ needs.terraform_apply.outputs.ecr_registry_url }}
