@@ -3,6 +3,10 @@ resource "aws_security_group" "ec2" {
   description = "Docker Compose host"
   vpc_id      = aws_vpc.main.id
 
+  tags = {
+    Name = "${local.stack_id}-ec2-sg"
+  }
+
   ingress {
     description = "HTTP for demo app"
     from_port   = 80
@@ -25,6 +29,10 @@ resource "aws_security_group" "ec2" {
 
 resource "aws_iam_role" "ec2" {
   name_prefix = "go-fullstack-ec2-"
+
+  tags = {
+    Name = "${local.stack_id}-ec2-role"
+  }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -51,6 +59,10 @@ resource "aws_iam_role_policy_attachment" "ec2_ecr" {
 resource "aws_iam_instance_profile" "ec2" {
   name_prefix = "go-fullstack-ec2-"
   role        = aws_iam_role.ec2.name
+
+  tags = {
+    Name = "${local.stack_id}-ec2-instance-profile"
+  }
 }
 
 resource "aws_instance" "app" {
@@ -59,6 +71,10 @@ resource "aws_instance" "app" {
   subnet_id              = aws_subnet.public_a.id
   vpc_security_group_ids = [aws_security_group.ec2.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
+
+  tags = {
+    Name = "${local.stack_id}-app"
+  }
 
   # user_data applies at launch only; when it changes, replace the instance so bootstrap stays consistent.
   user_data_replace_on_change = true

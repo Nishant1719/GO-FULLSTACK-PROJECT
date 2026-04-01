@@ -1,5 +1,5 @@
 variable "environment" {
-  description = "Logical environment (development or production)."
+  description = "Logical environment (e.g. development, production). Drives local.env_slug / local.stack_id and must match CI DEPLOY_ENV. See NAMING.md."
   type        = string
 }
 

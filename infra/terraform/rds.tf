@@ -8,6 +8,10 @@ resource "aws_security_group" "rds" {
   description = "PostgreSQL from EC2 only"
   vpc_id      = aws_vpc.main.id
 
+  tags = {
+    Name = "${local.stack_id}-rds-sg"
+  }
+
   ingress {
     description     = "Postgres from app host"
     from_port       = 5432
@@ -30,22 +34,26 @@ resource "aws_security_group" "rds" {
 
 resource "aws_db_subnet_group" "main" {
   # name_prefix avoids collision with an orphan "go-fullstack-<env>" group left in the account from a failed run.
-  name_prefix = "go-fullstack-${replace(var.environment, " ", "-")}-"
+  name_prefix = "${local.stack_id}-"
   subnet_ids  = [aws_subnet.private_a.id, aws_subnet.private_b.id]
+
+  tags = {
+    Name = "${local.stack_id}-db-subnet-group"
+  }
 }
 
 resource "aws_db_instance" "main" {
-  identifier = "go-fullstack-${replace(var.environment, " ", "-")}"
+  identifier = local.stack_id
 
-  engine               = "postgres"
-  engine_version       = "16"
-  instance_class       = var.rds_instance_class
-  allocated_storage    = var.rds_allocated_storage
-  storage_type         = "gp3"
-  db_name              = var.db_name
-  username             = var.db_username
-  password             = random_password.db.result
-  db_subnet_group_name = aws_db_subnet_group.main.name
+  engine                 = "postgres"
+  engine_version         = "16"
+  instance_class         = var.rds_instance_class
+  allocated_storage      = var.rds_allocated_storage
+  storage_type           = "gp3"
+  db_name                = var.db_name
+  username               = var.db_username
+  password               = random_password.db.result
+  db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
 
   publicly_accessible          = false
@@ -55,6 +63,10 @@ resource "aws_db_instance" "main" {
   apply_immediately            = true
   auto_minor_version_upgrade   = true
   performance_insights_enabled = false
+
+  tags = {
+    Name = "${local.stack_id}-postgres"
+  }
 
   lifecycle {
     prevent_destroy = false

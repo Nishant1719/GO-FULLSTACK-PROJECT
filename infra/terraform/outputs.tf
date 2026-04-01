@@ -6,6 +6,11 @@ output "environment" {
   value = var.environment
 }
 
+output "stack_id" {
+  description = "Stack prefix (project + environment) used in names and tags."
+  value       = local.stack_id
+}
+
 output "ec2_instance_id" {
   value = aws_instance.app.id
 }

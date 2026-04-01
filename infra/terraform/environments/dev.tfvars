@@ -1,4 +1,4 @@
-environment          = "development"
-ec2_instance_type    = "t3.micro"
-rds_instance_class   = "db.t3.micro"
+environment           = "development"
+ec2_instance_type     = "t3.micro"
+rds_instance_class    = "db.t3.micro"
 rds_allocated_storage = 20

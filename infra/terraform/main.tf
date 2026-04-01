@@ -6,6 +6,7 @@ provider "aws" {
       Environment = var.environment
       ManagedBy   = "terraform"
       Project     = "go-fullstack"
+      Stack       = local.stack_id
     }
   }
 }
