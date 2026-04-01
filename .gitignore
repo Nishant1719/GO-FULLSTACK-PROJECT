@@ -44,3 +44,6 @@ go-domain/.cursor/
 *.tfstate.*
 infra/terraform/backend.hcl
 infra/terraform/import-development-existing.sh
+
+# Optional local Docker smoke test script (not committed)
+infra/deploy/test-compose-install.sh

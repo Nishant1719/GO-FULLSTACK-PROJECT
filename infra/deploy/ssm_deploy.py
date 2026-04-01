@@ -158,9 +158,20 @@ def main() -> None:
         "i=0; while [ $i -lt 90 ]; do command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && break; echo Waiting for Docker...; sleep 10; i=$((i+1)); done",
         "command -v docker",
         "docker info",
-        # Deploy can run before cloud-init finishes installing the compose plugin; without it,
-        # `docker compose -f` is misparsed and errors (unknown shorthand flag: 'f').
-        "dnf install -y docker-compose-plugin",
+        # AL2023 repos may not ship docker-compose-plugin; ensure `docker compose` exists (dnf or GitHub binary).
+        "dnf install -y docker-compose-plugin || true",
+        (
+            "if ! docker compose version >/dev/null 2>&1; then "
+            "mkdir -p /usr/local/lib/docker/cli-plugins && "
+            "ARCH=$(uname -m) && "
+            'case "$ARCH" in x86_64) DC_ARCH=x86_64 ;; aarch64) DC_ARCH=aarch64 ;; '
+            '*) echo "unsupported arch: $ARCH"; exit 1 ;; esac && '
+            "curl -fsSL "
+            '"https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-${DC_ARCH}" '
+            "-o /usr/local/lib/docker/cli-plugins/docker-compose && "
+            "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; "
+            "fi"
+        ),
         "docker compose version",
         f"export AWS_REGION={shlex.quote(region)}",
         f"export GO_API_IMAGE={shlex.quote(go_api)}",
