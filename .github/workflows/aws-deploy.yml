@@ -25,13 +25,17 @@ permissions:
   contents: read
   id-token: write # required for AWS OIDC (configure-aws-credentials role assumption)
 
+# Use Node 24 for JS-based actions (checkout, setup-*, etc.) per GitHub deprecation timeline.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -47,9 +51,9 @@ jobs:
           go test ./... -count=1
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -79,15 +83,14 @@ jobs:
     outputs:
       ec2_instance_id: ${{ steps.tfout.outputs.ec2_instance_id }}
       database_url_parameter_name: ${{ steps.tfout.outputs.database_url_parameter_name }}
-      ecr_registry_url: ${{ steps.tfout.outputs.ecr_registry_url }}
       app_url: ${{ steps.tfout.outputs.app_url }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -95,7 +98,7 @@ jobs:
           mask-aws-account-id: true
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.9.0"
           # Default wrapper breaks `terraform output -raw` used in the next step (empty job outputs).
@@ -156,7 +159,6 @@ jobs:
         run: |
           echo "ec2_instance_id=$(terraform output -raw ec2_instance_id)" >> "$GITHUB_OUTPUT"
           echo "database_url_parameter_name=$(terraform output -raw database_url_parameter_name)" >> "$GITHUB_OUTPUT"
-          echo "ecr_registry_url=$(terraform output -raw ecr_registry_url)" >> "$GITHUB_OUTPUT"
           echo "app_url=$(terraform output -raw app_url)" >> "$GITHUB_OUTPUT"
 
       - name: Summary
@@ -183,16 +185,13 @@ jobs:
       tfvars_file: ${{ steps.meta.outputs.tfvars_file }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
       moving_tag: ${{ steps.meta.outputs.moving_tag }}
-      frontend_image: ${{ steps.images.outputs.frontend_image }}
-      bff_image: ${{ steps.images.outputs.bff_image }}
-      go_api_image: ${{ steps.images.outputs.go_api_image }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -255,21 +254,15 @@ jobs:
           docker push "$GO_API_IMAGE"
           docker push "$GO_API_MOVING_IMAGE"
 
-          echo "frontend_image=${FRONTEND_IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "bff_image=${BFF_IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "go_api_image=${GO_API_IMAGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Artifact summary
-        run: |
           {
             echo "### Published Docker artifacts"
             echo ""
-            echo "- Environment: **${{ steps.meta.outputs.deploy_env }}**"
-            echo "- Immutable tag: **${{ steps.meta.outputs.image_tag }}**"
-            echo "- Moving tag: **${{ steps.meta.outputs.moving_tag }}**"
-            echo "- Frontend: \`${{ steps.images.outputs.frontend_image }}\`"
-            echo "- BFF: \`${{ steps.images.outputs.bff_image }}\`"
-            echo "- Go API: \`${{ steps.images.outputs.go_api_image }}\`"
+            echo "- Environment: **${ECR_ENV}**"
+            echo "- Immutable tag: **${IMAGE_TAG}**"
+            echo "- Moving tag: **${MOVING_TAG}**"
+            echo "- Frontend: \`${FRONTEND_IMAGE}\`"
+            echo "- BFF: \`${BFF_IMAGE}\`"
+            echo "- Go API: \`${GO_API_IMAGE}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy_app:
@@ -285,18 +278,14 @@ jobs:
       IMAGE_TAG: ${{ needs.publish_artifacts.outputs.image_tag }}
       EC2_INSTANCE_ID: ${{ needs.terraform_apply.outputs.ec2_instance_id }}
       DATABASE_URL_PARAMETER_NAME: ${{ needs.terraform_apply.outputs.database_url_parameter_name }}
-      ECR_REGISTRY: ${{ needs.terraform_apply.outputs.ecr_registry_url }}
-      GO_API_IMAGE: ${{ needs.publish_artifacts.outputs.go_api_image }}
-      BFF_IMAGE: ${{ needs.publish_artifacts.outputs.bff_image }}
-      FRONTEND_IMAGE: ${{ needs.publish_artifacts.outputs.frontend_image }}
       COMPOSE_FILE: infra/deploy/docker-compose.aws.yml
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}

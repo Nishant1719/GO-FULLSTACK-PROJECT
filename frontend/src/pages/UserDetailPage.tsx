@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { usersApi, User } from '../api/users'
 import { UserForm } from '../components/UserForm'
@@ -11,7 +11,7 @@ export function UserDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
-  const fetchUser = () => {
+  const fetchUser = useCallback(() => {
     if (!id) return
     setError(null)
     usersApi
@@ -19,12 +19,12 @@ export function UserDetailPage() {
       .then(setUser)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false))
-  }
+  }, [id])
 
   useEffect(() => {
     setLoading(true)
     fetchUser()
-  }, [id])
+  }, [fetchUser])
 
   const handleEdit = async (payload: Parameters<typeof usersApi.update>[1]) => {
     if (!id) return
